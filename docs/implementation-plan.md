@@ -48,11 +48,11 @@ Claude Code is used from the very first task. It needs project context before do
 - Create `.env.example` with all required env vars documented (Kafka broker, DB URL, etc.)
 
 #### Acceptance Criteria
-- [ ] GitHub repo exists with initial commit
-- [ ] Root `CLAUDE.md` exists and is under 80 lines
-- [ ] All four docs are in `docs/` and readable
-- [ ] Starting a Claude Code session in the repo root shows awareness of the project's purpose and architecture
-- [ ] `.env.example` documents all expected environment variables
+- [x] GitHub repo exists with initial commit
+- [x] Root `CLAUDE.md` exists and is under 80 lines
+- [x] All four docs are in `docs/` and readable
+- [x] Starting a Claude Code session in the repo root shows awareness of the project's purpose and architecture
+- [x] `.env.example` documents all expected environment variables
 
 #### Constraints
 - Root `CLAUDE.md` must be lean — conventions and pointers only, no implementation details
