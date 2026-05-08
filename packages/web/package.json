@@ -1,0 +1,15 @@
+{
+  "name": "@apartment-tracker/web",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "biome check src/"
+  },
+  "dependencies": {
+    "@apartment-tracker/shared": "workspace:*"
+  }
+}

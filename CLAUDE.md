@@ -2,7 +2,7 @@
 
 A real-time apartment sales tracking pipeline for the Helsinki capital region (PKS). Ingests completed sale data from asuntojen.hintatiedot.fi via CSV, streams events through Redpanda (Kafka), enriches them with price-per-sqm and area labels, persists to TimescaleDB, and serves a React dashboard. Primary learning vehicle for Kafka stream processing and AI-assisted "vibe coding" development.
 
-## Package Structure (planned)
+## Package Structure
 
 ```
 packages/
@@ -43,4 +43,4 @@ turbo validate  # dependency-cruiser architecture rules
 - `docs/implementation-plan.md` — ordered issue breakdown (Phase A → B → C)
 - `docs/future-improvements.md` — deferred work and backlog
 
-This is a new project. Refer to `docs/architecture-decisions.md` for all technical decisions and `docs/implementation-plan.md` for the task breakdown.
+Refer to `docs/architecture-decisions.md` for all technical decisions and `docs/implementation-plan.md` for the task breakdown.

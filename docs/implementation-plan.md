@@ -84,12 +84,12 @@ Initialize the project:
 - Update root `CLAUDE.md` to reflect actual structure (remove "planned" markers)
 
 #### Acceptance Criteria
-- [ ] `pnpm install` succeeds with no errors
-- [ ] `turbo check` runs tsc across all packages with no errors
-- [ ] `turbo lint` runs biome across all packages with no errors
-- [ ] Each package can import from `shared` via workspace protocol
-- [ ] Dependency graph is clean: only `shared` is imported by other packages
-- [ ] Root `CLAUDE.md` reflects the actual project state
+- [x] `pnpm install` succeeds with no errors
+- [x] `turbo check` runs tsc across all packages with no errors
+- [x] `turbo lint` runs biome across all packages with no errors
+- [x] Each package can import from `shared` via workspace protocol
+- [x] Dependency graph is clean: only `shared` is imported by other packages
+- [x] Root `CLAUDE.md` reflects the actual project state
 
 #### Constraints
 - Use ESM (`"type": "module"`) in all packages

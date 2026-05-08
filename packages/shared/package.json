@@ -1,0 +1,17 @@
+{
+  "name": "@apartment-tracker/shared",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "biome check src/"
+  }
+}
