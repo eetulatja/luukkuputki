@@ -116,11 +116,11 @@ Create `docker-compose.yml` at project root with:
 Create a `scripts/init-db.sql` that creates the TimescaleDB extension and the `apartment_sales` hypertable per ADR-030.
 
 #### Acceptance Criteria
-- [ ] `docker compose up -d` starts all three services without errors
-- [ ] Redpanda Console is accessible at `http://localhost:8080`
-- [ ] `psql` can connect to TimescaleDB and the `apartment_sales` hypertable exists
-- [ ] Redpanda broker accepts connections on `localhost:9092`
-- [ ] `docker compose down` and `docker compose up -d` preserves data via volumes
+- [x] `docker compose up -d` starts all three services without errors
+- [x] Redpanda Console is accessible at `http://localhost:8080`
+- [x] `psql` can connect to TimescaleDB and the `apartment_sales` hypertable exists
+- [x] Redpanda broker accepts connections on `localhost:19092` (remapped from 9092 — host port conflict with existing SSH tunnel)
+- [x] `docker compose down` and `docker compose up -d` preserves data via volumes
 
 #### Constraints
 - Use Redpanda, not Apache Kafka
