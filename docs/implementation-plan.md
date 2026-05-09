@@ -150,11 +150,11 @@ Implement in `packages/shared/src/`:
 Create `.env.example` at repo root with all required env vars documented.
 
 #### Acceptance Criteria
-- [ ] All Zod schemas parse valid data and reject invalid data (unit tests)
-- [ ] Config module throws descriptive error when required env var is missing (unit test)
-- [ ] Postal code lookup returns correct area label and district for known codes (unit test)
-- [ ] All types are re-exported and importable from `@apartment-tracker/shared`
-- [ ] `turbo test` passes for the shared package
+- [x] All Zod schemas parse valid data and reject invalid data (unit tests)
+- [x] Config module throws descriptive error when required env var is missing (unit test)
+- [x] Postal code lookup returns correct area label and district for known codes (unit test)
+- [x] All types are re-exported and importable from `@apartment-tracker/shared`
+- [x] `turbo test` passes for the shared package
 
 #### Constraints
 - Do NOT add any dependencies beyond `zod`
