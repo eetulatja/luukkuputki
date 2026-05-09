@@ -16,6 +16,8 @@ A real-time apartment sales tracking pipeline for the Helsinki capital region (H
 
 ## ADR-002: Data Source — Initial
 
+**Status: Superseded by ADR-033** — asuntojen.hintatiedot.fi is no longer available as a data source.
+
 **Decision:** Start with [asuntojen.hintatiedot.fi](https://asuntojen.hintatiedot.fi) (Housing Finance and Development Centre / ARA) as the first and only data source.
 
 **Options considered:** Oikotie/Etuovi (scraping, no public API), DVV/Maanmittauslaitos (official property records), Tilastokeskus (aggregate statistics).
@@ -42,6 +44,8 @@ A real-time apartment sales tracking pipeline for the Helsinki capital region (H
 
 ## ADR-005: Ingestion Method
 
+**Status: Superseded by ADR-033** — the producer now calls the PxWeb REST API instead of reading a CSV.
+
 **Decision:** Start with manual CSV download, with a producer that reads the file and publishes each row as a Kafka event. Automate (scheduled scraping) later.
 
 **Rationale:** Gets the pipeline running in an hour instead of a day. The Kafka side is decoupled from the ingestion method — swapping the producer later requires no downstream changes.
@@ -62,6 +66,8 @@ A real-time apartment sales tracking pipeline for the Helsinki capital region (H
 ---
 
 ## ADR-007: Enrichments — Phase 1
+
+**Status: Superseded by ADR-033** — €/m² calculation is no longer an enrichment (data arrives pre-aggregated). Deviation scoring definition changed to PKS-wide comparison.
 
 **Decision:** Initial enrichments: €/m² calculation, postal-code-to-area-name mapping, deviation scoring (how far a sale is from the area average).
 
@@ -293,6 +299,8 @@ packages/
 
 ## ADR-029: Idempotency / Deduplication
 
+**Status: Superseded by ADR-033** — deduplication key is now `(postal_code, quarter, building_type)`, and the strategy is DO UPDATE SET (not DO NOTHING) since StatFin may revise published figures.
+
 **Decision:** Deduplication in the serving layer via upsert. Composite natural key: `(postal_code, address, sale_date, price, square_meters)`. Insert with `ON CONFLICT ... DO NOTHING`.
 
 **Rationale:** Simplest approach — no state management in producers or processors, the DB handles it, and the Kafka pipeline stays stateless and replayable. Duplicates flow through Kafka harmlessly at negligible volume.
@@ -300,6 +308,8 @@ packages/
 ---
 
 ## ADR-030: TimescaleDB Schema
+
+**Status: Superseded by ADR-033** — hypertable renamed to `area_stats`, schema reflects aggregate data model (see ADR-033 for new schema).
 
 **Decision:**
 
@@ -332,6 +342,8 @@ packages/
 ---
 
 ## ADR-031: MVP Definition (v1 Done Criteria)
+
+**Status: Superseded by ADR-033** — MVP updated to reflect aggregate data model, PxWeb producer, and `area_stats` table (see ADR-033).
 
 v1 is complete when:
 
@@ -422,4 +434,30 @@ v1 is complete when:
 | Testing | Vitest |
 | TS execution | tsx (watch mode) |
 | Architecture enforcement | dependency-cruiser |
+
+---
+
+## ADR-033: Data Source Change — Tilastokeskus StatFin PxWeb API
+
+**Status: Active**
+
+**Decision:** Replace asuntojen.hintatiedot.fi with the Tilastokeskus StatFin PxWeb API as the primary data source. Shift the data model from individual apartment sales to aggregate statistics per `(postal_code, quarter, building_type)`.
+
+**Context:** During pre-implementation exploration we discovered that asuntojen.hintatiedot.fi no longer works: no CSV export, no API access, and 2026 data is missing because their KVKL contract expired. A replacement was needed before any pipeline code could be written.
+
+**New data source:** `https://pxdata.stat.fi/PxWeb/pxweb/fi/StatFin/StatFin__ashi/` — Tilastokeskus StatFin REST API. Returns average €/m² and sale counts per postal code, per quarter, per building type (kerrostalo/rivitalo). Covers all of Finland, actively maintained, free, no auth required.
+
+**Impact on the data model:**
+
+- **Raw event:** `(postal_code, quarter, building_type, avg_price_per_sqm, sale_count)` — no address, price, square_meters, rooms, or building_year
+- **Enriched event:** adds `area_label`, `district`, `deviation_from_pks_avg`, `ingestion_timestamp`
+- **Enrichments:** €/m² calculation removed (data arrives pre-aggregated). Deviation scoring redefined as percentage deviation from the PKS-wide average for the same quarter and building type.
+- **DB hypertable:** renamed to `area_stats`, time column is `quarter` (DATE — first day of quarter), unique constraint `(postal_code, quarter, building_type)`, upsert uses DO UPDATE SET (StatFin may revise figures)
+- **Kafka topics:** renamed to `area-stats-raw`, `area-stats-enriched`, `area-stats-aggregated`, `area-stats-dead-letter`
+- **Dashboard:** "sale list" replaced by aggregate stats table. Per-sale filters (room count, price range, building year) deferred to future improvements pending an individual sale data source.
+- **Producer:** calls PxWeb API, fetches last 4 quarters per run, manually triggered (same pattern as CSV producer — simple, decoupled, swap later)
+
+**What stays the same:** overall pipeline architecture, Kafka topic count and topology, consumer group strategy, KafkaJS client, processing layer pattern, tRPC API structure, React + Recharts frontend, TimescaleDB.
+
+**Supersedes:** ADR-002 (data source), ADR-005 (ingestion method), ADR-007 (enrichments), ADR-029 (deduplication), ADR-030 (DB schema), ADR-031 (MVP definition).
 

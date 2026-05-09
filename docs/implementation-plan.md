@@ -140,10 +140,10 @@ See `docs/architecture-decisions.md` ADR-006 (topics), ADR-013 (schemas), ADR-01
 
 #### Task
 Implement in `packages/shared/src/`:
-- `schemas/raw-sale-event.ts` — Zod schema for raw apartment sale events (all fields from the CSV source)
-- `schemas/enriched-sale-event.ts` — Zod schema extending raw with `price_per_sqm`, `area_label`, `district`, `deviation_from_area_avg`
+- `schemas/raw-area-stats-event.ts` — Zod schema for raw area statistics events: `postal_code`, `quarter` (e.g. `"2024Q1"`), `building_type` (enum: `kerrostalo`|`rivitalo`), `avg_price_per_sqm`, `sale_count`
+- `schemas/enriched-area-stats-event.ts` — Zod schema extending raw with `area_label`, `district`, `deviation_from_pks_avg`, `ingestion_timestamp`
 - `config/index.ts` — reads env vars with Zod validation: `KAFKA_BROKER`, `DATABASE_URL`, `KAFKA_GROUP_PREFIX`
-- `config/topics.ts` — exported constants: `TOPIC_SALES_RAW`, `TOPIC_SALES_ENRICHED`, `TOPIC_SALES_AGGREGATED`, `TOPIC_DEAD_LETTER`
+- `config/topics.ts` — exported constants: `TOPIC_AREA_STATS_RAW`, `TOPIC_AREA_STATS_ENRICHED`, `TOPIC_AREA_STATS_AGGREGATED`, `TOPIC_AREA_STATS_DEAD_LETTER`
 - `lookups/postal-codes.ts` — static map of PKS postal codes to `{ areaLabel: string, district: string }` (cover at least 00100–00990 for Helsinki, 02100–02780 for Espoo, 01300–01770 for Vantaa)
 - `types/index.ts` — re-export inferred types from Zod schemas
 
@@ -307,72 +307,72 @@ The first end-to-end vertical slice. Build interactively with Claude Code (Sonne
 
 ---
 
-### B-01: Implement CSV producer
+### B-01: Implement PxWeb API producer
 
 **Labels:** `phase:b`, `risk:high`, `model:sonnet`
 
 #### Context
-First step in the data pipeline. The producer reads a CSV file (manually downloaded from asuntojen.hintatiedot.fi) and publishes each row as a raw event to Kafka.
+First step in the data pipeline. The producer fetches aggregate apartment sale statistics from the Tilastokeskus StatFin PxWeb API and publishes one event per `(postal_code, quarter, building_type)` to Kafka.
 
-See `packages/shared/src/schemas/raw-sale-event.ts` for the event schema.
-See `packages/shared/src/config/topics.ts` for `TOPIC_SALES_RAW`.
+See `packages/shared/src/schemas/raw-area-stats-event.ts` for the event schema.
+See `packages/shared/src/config/topics.ts` for `TOPIC_AREA_STATS_RAW`.
+See ADR-033 for the data source change rationale.
+
+The API base URL: `https://pxdata.stat.fi/PxWeb/pxweb/fi/StatFin/StatFin__ashi/`
 
 #### Task
 Implement in `packages/producer/src/`:
-- `csv-parser.ts` — reads a CSV file path from CLI args, parses rows, maps to raw sale event objects
-- `kafka-producer.ts` — connects to Redpanda via KafkaJS, publishes events to `TOPIC_SALES_RAW` with postal code as key, JSON serialized
-- `index.ts` — main entry point: parse CSV → validate each row with Zod → publish valid rows → log invalid rows with reason → print summary (N published, M skipped)
+- `pxweb-client.ts` — function that queries the PxWeb API for PKS postal codes (Helsinki 00100–00990, Espoo 02100–02780, Vantaa 01300–01770) for the last 4 quarters. Returns raw records as `(postal_code, quarter, building_type, avg_price_per_sqm, sale_count)` tuples.
+- `kafka-producer.ts` — connects to Redpanda via KafkaJS, publishes events to `TOPIC_AREA_STATS_RAW` with postal code as key, JSON serialized.
+- `index.ts` — main entry point: fetch from API → validate each record with Zod → publish valid records → log invalid records with reason → print summary (N published, M skipped).
 
 Add `kafkajs` as a dependency of `producer`.
-Add a sample CSV file `data/sample-sales.csv` with 10-20 realistic Helsinki apartment sale rows.
 
 #### Acceptance Criteria
-- [ ] `tsx packages/producer/src/index.ts data/sample-sales.csv` publishes events to Redpanda
-- [ ] Events are visible in Redpanda Console on the `apartment-sales-raw` topic
+- [ ] `tsx packages/producer/src/index.ts` fetches data and publishes events to Redpanda
+- [ ] Events are visible in Redpanda Console on the `area-stats-raw` topic
 - [ ] Each event has the postal code as the message key
-- [ ] Invalid rows are logged with validation error details and skipped (not published)
-- [ ] Summary printed: "Published 18 events, skipped 2 (invalid)"
-- [ ] Unit test for CSV row → Zod schema mapping with valid and invalid inputs
+- [ ] Invalid records are logged with validation error details and skipped (not published)
+- [ ] Summary printed: "Published N events, skipped M (invalid)"
+- [ ] Unit test for API response → Zod schema mapping with valid and invalid inputs
 
 #### Constraints
-- Do NOT modify the `shared` package schemas unless a field is genuinely missing from the CSV data
+- Do NOT modify the `shared` package schemas unless a field is genuinely missing from the API response
 - Do NOT implement any enrichment — raw data only
 - Use the Zod schema from `shared` for validation, do not duplicate
 
 ---
 
-### B-02: Implement price-per-sqm enrichment in processor
+### B-02: Implement area label enrichment in processor
 
 **Labels:** `phase:b`, `risk:high`, `model:sonnet`
 
 #### Context
-First enrichment step. The processor consumes raw events, calculates €/m², and publishes enriched events. This is the core Kafka consumer-producer pattern we want to learn.
+The processor consumes raw area stats events, enriches them with area label and district from the postal code lookup, and publishes enriched events. €/m² calculation is not needed — data arrives pre-aggregated from the StatFin API. This is the core Kafka consumer-producer pattern we want to learn.
 
-See `packages/shared/src/schemas/enriched-sale-event.ts` for the target schema.
-See `packages/shared/src/config/topics.ts` for `TOPIC_SALES_RAW` and `TOPIC_SALES_ENRICHED`.
-Follow the error handling pattern from ADR-019: try/catch with publish to `TOPIC_DEAD_LETTER` on failure.
+See `packages/shared/src/schemas/enriched-area-stats-event.ts` for the target schema.
+See `packages/shared/src/config/topics.ts` for `TOPIC_AREA_STATS_RAW` and `TOPIC_AREA_STATS_ENRICHED`.
+Follow the error handling pattern from ADR-019: try/catch with publish to `TOPIC_AREA_STATS_DEAD_LETTER` on failure.
 
 #### Task
 Implement in `packages/processor/src/`:
-- `enrichments/price-per-sqm.ts` — pure function: takes raw event, returns `price_per_sqm` (price / square_meters). Handles edge cases (zero sqm, missing data).
-- `enrichments/area-label.ts` — pure function: takes postal code, returns `area_label` and `district` from the shared lookup table. Returns "Unknown" for unmapped codes.
-- `kafka-consumer.ts` — KafkaJS consumer in group `processor-enrichment-v1`, subscribes to `TOPIC_SALES_RAW`, for each message: parse with Zod, apply enrichments, publish to `TOPIC_SALES_ENRICHED`. On error: publish original event + error to `TOPIC_DEAD_LETTER`.
+- `enrichments/area-label.ts` — pure function: takes postal code, returns `area_label` and `district` from the shared lookup table. Returns `"Unknown"` for unmapped codes.
+- `kafka-consumer.ts` — KafkaJS consumer in group `processor-enrichment-v1`, subscribes to `TOPIC_AREA_STATS_RAW`, for each message: parse with Zod, apply enrichments, publish to `TOPIC_AREA_STATS_ENRICHED`. On error: publish original event + error to `TOPIC_AREA_STATS_DEAD_LETTER`.
 - `index.ts` — main entry point: connect consumer, start processing loop, handle graceful shutdown (SIGINT/SIGTERM)
 
-Stub out `deviation_from_area_avg` as `null` for now — it requires historical data we don't have yet.
+Stub out `deviation_from_pks_avg` as `null` for now — implemented in C-02.
 
 #### Acceptance Criteria
-- [ ] With producer and processor both running, events flow from `sales-raw` to `sales-enriched`
-- [ ] Enriched events in Redpanda Console have `price_per_sqm`, `area_label`, and `district` fields
-- [ ] An event with `square_meters: 0` lands in `sales-dead-letter` with error details
+- [ ] With producer and processor both running, events flow from `area-stats-raw` to `area-stats-enriched`
+- [ ] Enriched events in Redpanda Console have `area_label` and `district` fields
 - [ ] An event with an unknown postal code gets `area_label: "Unknown"` (not dead-lettered)
 - [ ] Graceful shutdown: Ctrl+C disconnects cleanly without losing messages
-- [ ] Unit tests for `price-per-sqm.ts` and `area-label.ts` with edge cases
+- [ ] Unit tests for `area-label.ts` with edge cases
 - [ ] `turbo test` passes
 
 #### Constraints
 - Consumer group ID must include version suffix (`-v1`) per ADR-027
-- Do NOT implement deviation scoring yet — just stub as null
+- Do NOT implement deviation scoring yet — stub as null
 - Do NOT implement the serving layer — that's the next issue
 - Enrichment functions must be pure — no side effects, no Kafka imports
 
@@ -383,25 +383,25 @@ Stub out `deviation_from_area_avg` as `null` for now — it requires historical 
 **Labels:** `phase:b`, `risk:high`, `model:sonnet`
 
 #### Context
-The serving consumer reads enriched events and writes them to TimescaleDB. This completes the data pipeline — after this, data flows from CSV to database.
+The serving consumer reads enriched area stats events and writes them to TimescaleDB. This completes the data pipeline — after this, data flows from the PxWeb API to the database.
 
-See `packages/shared/src/schemas/enriched-sale-event.ts` for the event schema.
-See `scripts/init-db.sql` for the table schema.
-See ADR-029 for deduplication via upsert with composite natural key.
+See `packages/shared/src/schemas/enriched-area-stats-event.ts` for the event schema.
+See `scripts/init-db.sql` for the `area_stats` hypertable schema.
+See ADR-029/ADR-033 for deduplication via upsert with composite natural key `(postal_code, quarter, building_type)`.
 
 #### Task
 Implement in `packages/serving/src/`:
 - `db.ts` — database connection pool using `pg` (node-postgres). Reads `DATABASE_URL` from shared config.
-- `writer.ts` — function that takes an enriched sale event and upserts into `apartment_sales` table. Uses `INSERT ... ON CONFLICT (postal_code, address, sale_date, price, square_meters) DO NOTHING`.
-- `kafka-consumer.ts` — KafkaJS consumer in group `serving-db-writer-v1`, subscribes to `TOPIC_SALES_ENRICHED`, for each message: parse with Zod, write to DB. On DB error: publish to dead letter.
+- `writer.ts` — function that takes an enriched area stats event and upserts into `area_stats` table. Uses `INSERT ... ON CONFLICT (postal_code, quarter, building_type) DO UPDATE SET avg_price_per_sqm = EXCLUDED.avg_price_per_sqm, sale_count = EXCLUDED.sale_count, ...` — StatFin may revise published figures.
+- `kafka-consumer.ts` — KafkaJS consumer in group `serving-db-writer-v1`, subscribes to `TOPIC_AREA_STATS_ENRICHED`, for each message: parse with Zod, write to DB. On DB error: publish to dead letter.
 - `index.ts` — main entry point: connect consumer and DB pool, start processing loop, graceful shutdown closes both.
 
 Add `pg` as a dependency.
 
 #### Acceptance Criteria
-- [ ] With full pipeline running (producer → processor → serving), events land in the `apartment_sales` TimescaleDB table
-- [ ] `SELECT * FROM apartment_sales` returns the sample data with enriched fields
-- [ ] Running the same CSV through the producer again does not create duplicate rows (upsert works)
+- [ ] With full pipeline running (producer → processor → serving), events land in the `area_stats` TimescaleDB table
+- [ ] `SELECT * FROM area_stats` returns the data with enriched fields
+- [ ] Running the producer again updates existing rows (upsert works — DO UPDATE SET, not DO NOTHING)
 - [ ] DB connection errors are caught and the event is sent to dead letter (not crash)
 - [ ] Graceful shutdown closes DB pool and Kafka consumer
 - [ ] `turbo test` passes (unit test for the upsert SQL generation)
@@ -418,28 +418,28 @@ Add `pg` as a dependency.
 **Labels:** `phase:b`, `risk:high`, `model:sonnet`
 
 #### Context
-The API layer exposes data from TimescaleDB to the front-end. Per ADR-021, we need three views: time series, area comparison, and filtered sale list.
+The API layer exposes data from TimescaleDB to the front-end. Per ADR-021 (updated per ADR-033), we need three views: time series, area comparison, and aggregate stats table.
 
-See ADR-010 (tRPC), ADR-022 (filtering), ADR-030 (DB schema).
+See ADR-010 (tRPC), ADR-022 (filtering), ADR-033 (data model).
 
 #### Task
 Implement in `packages/api/src/`:
 - `db.ts` — database connection pool (can share pattern with serving, but separate instance)
-- `routers/sales.ts` — tRPC router with three procedures:
-  - `timeSeries` — input: postal codes (array), date range. Returns monthly avg €/m² per postal code. SQL uses TimescaleDB `time_bucket`.
-  - `areaComparison` — input: postal codes (array), date range. Returns aggregate stats per postal code (avg/median/min/max €/m², count).
-  - `salesList` — input: postal codes (array), date range, optional min/max price, sort field, sort order, limit, offset. Returns paginated list of individual sales.
+- `routers/stats.ts` — tRPC router with three procedures:
+  - `timeSeries` — input: postal codes (array), quarter range. Returns quarterly `avg_price_per_sqm` per postal code over time.
+  - `areaComparison` — input: postal codes (array), quarter range. Returns aggregate stats per postal code (avg/min/max `avg_price_per_sqm`, total `sale_count`).
+  - `statsList` — input: postal codes (array), quarter range, optional building types array, sort field, sort order. Returns all matching rows from `area_stats` (no pagination — dataset is small).
 - `index.ts` — tRPC standalone server (or express adapter) with CORS enabled for localhost dev.
 
 Add `@trpc/server`, `pg`, and `express` (or standalone adapter) as dependencies.
 
 #### Acceptance Criteria
 - [ ] API starts and serves on `http://localhost:3000`
-- [ ] `timeSeries` returns monthly data points for requested postal codes
+- [ ] `timeSeries` returns quarterly data points for requested postal codes
 - [ ] `areaComparison` returns aggregate stats grouped by postal code
-- [ ] `salesList` returns paginated results with correct filtering and sorting
+- [ ] `statsList` returns all matching rows sorted correctly
 - [ ] Empty postal codes array returns data for all areas
-- [ ] Date range filtering works correctly
+- [ ] Quarter range filtering works correctly
 - [ ] Invalid inputs return proper tRPC error responses
 - [ ] `turbo test` passes (unit tests for SQL query builders)
 
@@ -456,29 +456,28 @@ Add `@trpc/server`, `pg`, and `express` (or standalone adapter) as dependencies.
 **Labels:** `phase:b`, `risk:low`, `model:sonnet`
 
 #### Context
-The front-end layer. Per ADR-021 and ADR-022, we need time series chart, area comparison bar chart, and filterable sale list, with global area and date range filters.
+The front-end layer. Per ADR-021 and ADR-022 (updated per ADR-033), we need time series chart, area comparison bar chart, and aggregate stats table, with global area and quarter range filters.
 
-See ADR-011 (Vite + React + Recharts), ADR-022 (hybrid filtering).
+See ADR-011 (Vite + React + Recharts), ADR-022 (hybrid filtering), ADR-033 (data model change).
 
 #### Task
 Scaffold and implement in `packages/web/`:
 - Vite + React setup with TypeScript
 - tRPC client connected to `http://localhost:3000`
-- Global filter bar at top: postal code multi-select dropdown, date range picker (start/end month)
+- Global filter bar at top: postal code multi-select dropdown, quarter range picker (start/end quarter)
 - Three view components:
-  - `TimeSeriesChart.tsx` — Recharts LineChart, one line per selected postal code, monthly €/m² over time
-  - `AreaComparison.tsx` — Recharts BarChart, avg €/m² per selected postal code for the date range
-  - `SalesList.tsx` — table with columns: date, area, address, price, m², €/m², rooms, building type. Sortable by clicking column headers. Paginated.
+  - `TimeSeriesChart.tsx` — Recharts LineChart, one line per selected postal code, quarterly avg €/m² over time
+  - `AreaComparison.tsx` — Recharts BarChart, avg €/m² per selected postal code for the quarter range
+  - `StatsList.tsx` — table with columns: area, quarter, building type, avg €/m², sale count, deviation from PKS avg. Sortable by clicking column headers. No pagination needed (dataset is small).
 - Layout: filter bar at top, two charts side by side (or stacked on small screens), table below
 
 #### Acceptance Criteria
 - [ ] `turbo dev` starts the web app and it loads in browser
 - [ ] Changing the area multi-select updates all three views
-- [ ] Changing the date range updates all three views
+- [ ] Changing the quarter range updates all three views
 - [ ] Time series chart shows one line per selected area
 - [ ] Area comparison chart shows bars for selected areas
-- [ ] Sale list is sortable by each column
-- [ ] Sale list paginates (next/previous page)
+- [ ] Stats table is sortable by each column
 - [ ] Loading states shown while data fetches
 - [ ] Empty states shown when no data matches filters
 
@@ -500,16 +499,16 @@ All pipeline components now exist. This issue verifies the full flow works end-t
 #### Task
 - Create `scripts/run-pipeline.sh` that:
   1. Checks Docker Compose is running
-  2. Runs the producer with `data/sample-sales.csv`
+  2. Runs the producer (`tsx packages/producer/src/index.ts`)
   3. Waits for events to flow through (poll Redpanda Console or check DB)
-  4. Prints summary: events in raw topic, enriched topic, dead letter, DB rows
+  4. Prints summary: events in `area-stats-raw` topic, enriched topic, dead letter, DB rows in `area_stats`
 - Update root `README.md` with:
   - Project description
   - Prerequisites (Docker, Node, pnpm)
   - Quick start: `docker compose up -d`, `pnpm install`, `turbo dev`, `scripts/run-pipeline.sh`
   - Architecture diagram (from ADR docs)
   - Link to docs
-- Verify the full flow manually: CSV → raw topic → enriched topic → TimescaleDB → tRPC API → React dashboard showing charts and data
+- Verify the full flow manually: PxWeb API → `area-stats-raw` topic → enriched topic → TimescaleDB → tRPC API → React dashboard showing charts and data
 - Fix any integration issues discovered
 
 #### Acceptance Criteria
@@ -569,22 +568,22 @@ Implement in `packages/orchestrator/src/`:
 **Labels:** `phase:c`, `risk:low`, `ralph-ready`, `model:haiku`
 
 #### Context
-The `deviation_from_area_avg` field is currently stubbed as `null` in the processor. Now that we have historical data in TimescaleDB, we can calculate it.
+The `deviation_from_pks_avg` field is currently stubbed as `null` in the processor. Now that we have data in TimescaleDB, we can calculate how each postal code's `avg_price_per_sqm` compares to the PKS-wide average for the same quarter and building type.
 
-See `packages/processor/src/enrichments/price-per-sqm.ts` for the existing enrichment pattern.
-See `packages/shared/src/schemas/enriched-sale-event.ts` for the field definition.
+See `packages/processor/src/enrichments/area-label.ts` for the existing enrichment pattern.
+See `packages/shared/src/schemas/enriched-area-stats-event.ts` for the field definition.
 
 #### Task
 Implement in `packages/processor/src/`:
-- `enrichments/deviation-score.ts` — function that takes `postal_code` and `price_per_sqm`, queries TimescaleDB for the area's average €/m² over the last 365 days, returns the percentage deviation. Returns `null` if fewer than 5 sales in the area.
-- Wire into the processor pipeline alongside existing enrichments
+- `enrichments/deviation-score.ts` — function that takes `postal_code`, `quarter`, `building_type`, and `avg_price_per_sqm`, queries TimescaleDB for the PKS-wide average `avg_price_per_sqm` for that quarter and building type, returns the percentage deviation. Returns `null` if fewer than 5 postal codes report data for that combination.
+- Wire into the processor pipeline alongside the area label enrichment
 - Add DB connection to the processor (read-only, for lookups)
 
 #### Acceptance Criteria
-- [ ] Enriched events now include a numeric `deviation_from_area_avg` or `null`
-- [ ] A sale at exactly the area average has deviation `0`
-- [ ] A sale 10% above average has deviation `10` (or `0.1` — be consistent with schema)
-- [ ] Areas with fewer than 5 historical sales get `null`
+- [ ] Enriched events now include a numeric `deviation_from_pks_avg` or `null`
+- [ ] A postal code at exactly the PKS average has deviation `0`
+- [ ] A postal code 10% above PKS average has deviation `10`
+- [ ] Quarter+building type combinations with fewer than 5 postal codes get `null`
 - [ ] Unit test for the deviation calculation logic
 - [ ] Existing tests still pass — `turbo test` green
 
@@ -600,96 +599,45 @@ Implement in `packages/processor/src/`:
 **Labels:** `phase:c`, `risk:low`, `ralph-ready`, `model:haiku`
 
 #### Context
-The sales list currently filters by area and date range. Adding a building type filter (kerrostalo/rivitalo/etc.) is a useful per-view filter as described in ADR-022.
+The stats table currently filters by area and quarter range. Adding a building type filter (kerrostalo/rivitalo) is a useful per-view filter as described in ADR-022.
 
-See `packages/api/src/routers/sales.ts` for the `salesList` procedure.
-See `packages/web/src/` for the SalesList component.
+See `packages/api/src/routers/stats.ts` for the `statsList` procedure.
+See `packages/web/src/` for the StatsList component.
 
 #### Task
-- Add optional `buildingTypes` (string array) input to the `salesList` tRPC procedure
+- Add optional `buildingTypes` (string array) input to the `statsList` tRPC procedure
 - Add WHERE clause filtering when building types are provided
-- Add a multi-select or checkbox group to the SalesList component for building type filtering
-- Populate the building type options from the data (query distinct values, or hardcode common types)
+- Add a multi-select or checkbox group to the StatsList component for building type filtering
 
 #### Acceptance Criteria
-- [ ] Selecting "kerrostalo" shows only apartment building sales
-- [ ] Selecting multiple types shows sales matching any selected type
+- [ ] Selecting "kerrostalo" shows only kerrostalo rows
+- [ ] Selecting multiple types shows rows matching any selected type
 - [ ] No selection shows all types (current behavior preserved)
-- [ ] Building type filter combines correctly with area and date range filters
+- [ ] Building type filter combines correctly with area and quarter range filters
 - [ ] `turbo test` passes
 
 #### Constraints
-- Do NOT modify global filters — this is a per-view filter on the sales list only
+- Do NOT modify global filters — this is a per-view filter on the stats table only
 - Do NOT modify other views
 
 ---
 
-### C-04: Add room count filter to sales list
+### C-06: Add avg €/m² range filter to stats table
 
 **Labels:** `phase:c`, `risk:low`, `ralph-ready`, `model:haiku`
 
 #### Context
-Similar to C-03, adding a room count filter to the sales list. Users often want to see "all 2-room apartments in Kallio."
+Filtering by avg €/m² range lets users narrow the stats table to areas within a specific price band.
 
-See `packages/api/src/routers/sales.ts` for the `salesList` procedure.
-
-#### Task
-- Add optional `minRooms` and `maxRooms` (number) inputs to the `salesList` tRPC procedure
-- Add WHERE clause filtering
-- Add room count range inputs (two number dropdowns or a slider) to the SalesList component
-
-#### Acceptance Criteria
-- [ ] Setting rooms 2–3 shows only 2- and 3-room apartments
-- [ ] Setting only minRooms works (no upper bound)
-- [ ] Setting only maxRooms works (no lower bound)
-- [ ] Combines correctly with all other filters
-- [ ] `turbo test` passes
-
-#### Constraints
-- Do NOT modify other views or global filters
-
----
-
-### C-05: Add price range filter to sales list
-
-**Labels:** `phase:c`, `risk:low`, `ralph-ready`, `model:haiku`
-
-#### Context
-Users want to filter by total price (e.g. "apartments under €300,000").
-
-See `packages/api/src/routers/sales.ts` for the `salesList` procedure.
+See `packages/api/src/routers/stats.ts` for the `statsList` procedure.
 
 #### Task
-- Add optional `minPrice` and `maxPrice` (number) inputs to the `salesList` tRPC procedure
-- Add WHERE clause filtering
-- Add price range inputs to the SalesList component (two number inputs with € formatting)
+- Add optional `minAvgPricePerSqm` and `maxAvgPricePerSqm` (number) inputs to the `statsList` tRPC procedure
+- Add WHERE clause filtering on `avg_price_per_sqm` column
+- Add €/m² range inputs to the StatsList component
 
 #### Acceptance Criteria
-- [ ] Setting max price €200,000 shows only cheaper apartments
-- [ ] Combines correctly with all other filters
-- [ ] `turbo test` passes
-
-#### Constraints
-- Do NOT modify other views or global filters
-
----
-
-### C-06: Add €/m² range filter to sales list
-
-**Labels:** `phase:c`, `risk:low`, `ralph-ready`, `model:haiku`
-
-#### Context
-Filtering by €/m² is often more useful than total price for comparison purposes.
-
-See `packages/api/src/routers/sales.ts` for the `salesList` procedure.
-
-#### Task
-- Add optional `minPricePerSqm` and `maxPricePerSqm` (number) inputs to the `salesList` tRPC procedure
-- Add WHERE clause filtering on `price_per_sqm` column
-- Add €/m² range inputs to the SalesList component
-
-#### Acceptance Criteria
-- [ ] Setting range 3000–5000 shows only sales in that €/m² range
+- [ ] Setting range 3000–5000 shows only rows where avg €/m² is in that range
 - [ ] Combines correctly with all other filters
 - [ ] `turbo test` passes
 
@@ -721,30 +669,6 @@ See `packages/api/src/routers/sales.ts` for existing query patterns.
 
 #### Constraints
 - Do NOT modify existing views — add above them
-
----
-
-### C-08: Add building year filter and decade grouping
-
-**Labels:** `phase:c`, `risk:low`, `ralph-ready`, `model:haiku`
-
-#### Context
-Building age significantly affects apartment prices. A decade grouping (1960s, 1970s, etc.) is more useful than exact year filtering.
-
-#### Task
-- Add optional `buildingDecades` (string array, e.g. `["1970", "1980"]`) input to the `salesList` procedure
-- SQL: `building_year >= 1970 AND building_year < 1980` for decade "1970"
-- Add decade multi-select to the SalesList component
-- Add building decade as a grouping option in `areaComparison` — when enabled, bars show avg €/m² per decade instead of per area
-
-#### Acceptance Criteria
-- [ ] Filtering by decade "2000" shows only buildings built 2000–2009
-- [ ] Multiple decades can be selected
-- [ ] Area comparison view can toggle between "by area" and "by decade" grouping
-- [ ] `turbo test` passes
-
-#### Constraints
-- Do NOT modify the time series view
 
 ---
 
@@ -873,8 +797,8 @@ Per AI-ADR-014, PRs from `risk:low` issues should auto-merge when CI passes and 
 | A-06 | Set up GitHub repo CI, Claude Action | A | high | opus | A-02 through A-05 |
 | A-07 | Set up per-package CLAUDE.md and skills | A | high | opus | A-06 |
 | A-08 | Set up Claude Code hooks | A | high | sonnet | A-07 |
-| B-01 | Implement CSV producer | B | high | sonnet | A-03, A-04 |
-| B-02 | Implement processor with enrichments | B | high | sonnet | B-01 |
+| B-01 | Implement PxWeb API producer | B | high | sonnet | A-03, A-04 |
+| B-02 | Implement processor with area label enrichment | B | high | sonnet | B-01 |
 | B-03 | Implement serving layer — DB writer | B | high | sonnet | B-02 |
 | B-04 | Implement tRPC API | B | high | sonnet | B-03 |
 | B-05 | Implement React dashboard | B | low | sonnet | B-04 |
@@ -882,11 +806,8 @@ Per AI-ADR-014, PRs from `risk:low` issues should auto-merge when CI passes and 
 | C-01 | Build the orchestrator package | C | high | sonnet | B-06 |
 | C-02 | Add deviation scoring enrichment | C | low | haiku | B-06 |
 | C-03 | Add building type filter | C | low | haiku | B-06 |
-| C-04 | Add room count filter | C | low | haiku | B-06 |
-| C-05 | Add price range filter | C | low | haiku | B-06 |
-| C-06 | Add €/m² range filter | C | low | haiku | B-06 |
+| C-06 | Add avg €/m² range filter | C | low | haiku | B-06 |
 | C-07 | Add summary stats cards | C | low | haiku | B-06 |
-| C-08 | Add building year filter and decade grouping | C | low | haiku | B-06 |
 | C-09 | Improve dashboard styling | C | low | haiku | B-06 |
 | C-10 | Add CSV export | C | low | haiku | B-06 |
 | C-11 | Set up GitHub Actions Fixer | C | high | sonnet | C-01 |
@@ -894,6 +815,6 @@ Per AI-ADR-014, PRs from `risk:low` issues should auto-merge when CI passes and 
 
 **Phase A:** 8 issues (interactive, ~2 days)
 **Phase B:** 6 issues (semi-autonomous, ~2-3 days)
-**Phase C:** 12 issues (autonomous, ~1-2 days of agent time + review)
+**Phase C:** 9 issues (autonomous, ~1-2 days of agent time + review)
 
 **Total estimated effort:** ~1 week of focused work, with Phase C largely hands-off.

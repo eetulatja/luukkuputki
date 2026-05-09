@@ -1,15 +1,15 @@
 # Helsinki Apartment Tracker
 
-A real-time apartment sales tracking pipeline for the Helsinki capital region (PKS). Ingests completed sale data from asuntojen.hintatiedot.fi via CSV, streams events through Redpanda (Kafka), enriches them with price-per-sqm and area labels, persists to TimescaleDB, and serves a React dashboard. Primary learning vehicle for Kafka stream processing and AI-assisted "vibe coding" development.
+A real-time apartment market statistics pipeline for the Helsinki capital region (PKS). Fetches aggregate sale statistics (avg €/m², sale counts per postal code per quarter) from the Tilastokeskus StatFin PxWeb API, streams events through Redpanda (Kafka), enriches them with area labels and deviation scoring, persists to TimescaleDB, and serves a React dashboard. Primary learning vehicle for Kafka stream processing and AI-assisted "vibe coding" development.
 
 ## Package Structure
 
 ```
 packages/
   shared/       — Zod schemas, config, topic constants, postal code lookups
-  producer/     — CSV ingestion → apartment-sales-raw topic
-  processor/    — sales-raw → enrichment → sales-enriched topic
-  serving/      — sales-enriched → TimescaleDB writer
+  producer/     — PxWeb API ingestion → area-stats-raw topic
+  processor/    — area-stats-raw → enrichment → area-stats-enriched topic
+  serving/      — area-stats-enriched → TimescaleDB writer
   api/          — tRPC server, queries TimescaleDB
   web/          — Vite + React dashboard (Recharts)
   orchestrator/ — autonomous development loop (spawns Claude Code headless)

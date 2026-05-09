@@ -4,6 +4,27 @@ Items explicitly deferred during architecture planning. Roughly ordered by value
 
 ---
 
+## Individual Sale Features — Deferred
+
+These features require individual apartment sale records (address, price, m², rooms, building year) rather than the aggregate statistics provided by the Tilastokeskus StatFin PxWeb API. Deferred until an individual sale data source is available (e.g. DVV/Maanmittauslaitos, or a future StatFin endpoint with record-level data).
+
+### Room Count Filter
+Filter the sale list by number of rooms (e.g. "all 2-room apartments in Kallio").
+- Requires `rooms` field in the data model
+- Was C-04 before the data source change
+
+### Total Price Range Filter
+Filter by total sale price (e.g. "apartments under €300,000").
+- Requires individual `price` field in the data model
+- Was C-05 before the data source change
+
+### Building Year Filter and Decade Grouping
+Filter by building construction decade. Add decade grouping option to area comparison view.
+- Requires `building_year` field in the data model
+- Was C-08 before the data source change
+
+---
+
 ## Iteration 2 — Natural Next Steps
 
 ### Map View
