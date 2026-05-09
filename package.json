@@ -10,11 +10,13 @@
     "check": "turbo check",
     "test": "turbo test",
     "lint": "turbo lint",
-    "validate": "turbo validate"
+    "validate": "depcruise --config .dependency-cruiser.cjs packages/",
+    "graph": "depcruise --config .dependency-cruiser.cjs --output-type dot packages/ | dot -T svg > docs/dependency-graph.svg"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.0",
     "@types/node": "^22.0.0",
+    "dependency-cruiser": "^17.4.0",
     "tsx": "^4.19.0",
     "turbo": "^2.3.0",
     "typescript": "^5.6.0",

@@ -186,9 +186,9 @@ Per ADR-032, we use dependency-cruiser to enforce package boundaries. Rules must
 - Add a script to generate SVG dependency graph: `depcruise --config .dependency-cruiser.cjs --output-type dot packages/ | dot -T svg > docs/dependency-graph.svg`
 
 #### Acceptance Criteria
-- [ ] `turbo validate` passes with the current (correct) dependency structure
-- [ ] Intentionally adding a forbidden import (e.g. `shared` importing from `producer`) causes `turbo validate` to fail with a clear error message
-- [ ] SVG dependency graph is generated and shows the package structure
+- [x] `pnpm validate` passes with the current (correct) dependency structure
+- [x] Intentionally adding a forbidden import (e.g. `shared` importing from `producer`) causes `pnpm validate` to fail with a clear error message
+- [x] SVG dependency graph is generated and shows the package structure
 
 #### Constraints
 - Rules must match the architecture described in ADR-032 exactly
