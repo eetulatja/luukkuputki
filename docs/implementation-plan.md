@@ -268,7 +268,7 @@ Per AI-ADR-002 and AI-ADR-003, per-package context and skills must be in place b
 **Labels:** `phase:a`, `risk:high`, `model:sonnet`
 
 #### Context
-Per AI-ADR-017, we need five hooks configured before autonomous work begins. These provide deterministic guardrails.
+Per AI-ADR-017, we need six hooks configured before autonomous work begins. These provide deterministic guardrails and local quality gates.
 
 #### Task
 Configure in `.claude/settings.json`:
@@ -277,6 +277,7 @@ Configure in `.claude/settings.json`:
 3. **Stop → test runner**: run `turbo test` and `turbo check`, surface results as context
 4. **Notification → Telegram**: async command hook that posts to Telegram bot API (read bot token and chat ID from env vars, no-op if not configured)
 5. **SessionStart → context loader**: inject output of `git status --short`, `git branch --show-current`, and if a `CURRENT_ISSUE` env var is set, fetch the issue body via `gh issue view`
+6. **PrePush → code review**: runs `/code-review` on the branch diff and displays findings before allowing push (can be bypassed with `--no-verify`)
 
 Create hook scripts in `.claude/hooks/` as standalone scripts:
 - `format.sh`
@@ -284,6 +285,7 @@ Create hook scripts in `.claude/hooks/` as standalone scripts:
 - `test-on-stop.sh`
 - `notify-telegram.sh`
 - `load-context.sh`
+- `review-pre-push.sh`
 
 #### Acceptance Criteria
 - [ ] Editing a `.ts` file via Claude Code triggers auto-formatting
@@ -291,13 +293,17 @@ Create hook scripts in `.claude/hooks/` as standalone scripts:
 - [ ] When Claude finishes a task, test results appear in the output
 - [ ] If `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` are set, a notification is sent
 - [ ] Session start shows git status and current branch
-- [ ] `/hooks` in Claude Code shows all five hooks under the correct events
+- [ ] Running `git push` triggers a local code review before the push completes
+- [ ] Code review output is displayed and summarized (number of findings by severity)
+- [ ] Push can be bypassed with `git push --no-verify` if needed
+- [ ] `/hooks` in Claude Code shows all six hooks under the correct events
 
 #### Constraints
 - All hooks must be command type (no prompt or agent hooks yet)
-- Each hook script must be fast (under 2 seconds) except the stop hook (test runner)
+- Each hook script must be fast (under 2 seconds) except the stop hook (test runner) and pre-push hook (review may take 10-30s)
 - Telegram hook must be async and must not fail the session if Telegram is unreachable
 - File protection hook must be bypassable by setting `ALLOW_INFRA_EDIT=true` env var
+- Pre-push hook must not block the push on low-severity findings, only block if issues are critical
 
 ---
 

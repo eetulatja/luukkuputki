@@ -141,6 +141,13 @@ Use an LLM to generate natural language market summaries.
 
 ## AI Workflow Improvements
 
+### Claude Code Action for PR Review
+Add AI-powered PR review via `@claude` mentions using `anthropics/claude-code-action@v1`.
+- Requires an Anthropic API key (`ANTHROPIC_API_KEY` repo secret)
+- Workflow file: `.github/workflows/claude.yml` — triggers on `issue_comment`, `pull_request_review_comment`, `pull_request_review`, and `issues` events
+- Model: `claude-sonnet-4-6` per AI-ADR-009
+- Consider also triggering automatically on `pull_request: [opened, synchronize]` to remove the need for manual `@claude review` comments
+
 ### Additional Skills
 Create as repetition demands:
 - `new-consumer` — step-by-step for creating a new Kafka consumer
