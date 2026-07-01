@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "Stop": {
+      "command": ".claude/hooks/session-end.sh"
+    }
+  }
+}
