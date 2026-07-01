@@ -3,7 +3,12 @@
     "Stop": [
       {
         "matcher": "*",
-        "command": ".claude/hooks/session-end.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/session-end.sh"
+          }
+        ]
       }
     ]
   }
