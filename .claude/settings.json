@@ -1,7 +1,10 @@
 {
   "hooks": {
-    "Stop": {
-      "command": ".claude/hooks/session-end.sh"
-    }
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": ".claude/hooks/session-end.sh"
+      }
+    ]
   }
 }
