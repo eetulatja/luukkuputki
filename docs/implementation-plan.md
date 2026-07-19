@@ -215,12 +215,12 @@ Per AI-ADR-006 and AI-ADR-008, we need CI and AI-powered PR review before starti
 - Add `ANTHROPIC_API_KEY` to repository secrets
 
 #### Acceptance Criteria
-- [ ] Push to a branch and open a PR triggers CI workflow
-- [ ] CI runs all four checks and reports status on the PR
-- [ ] Commenting `@claude review` on the PR triggers Claude Code Action
-- [ ] Claude posts a review comment on the PR
-- [ ] Issue template is available when creating new issues
-- [ ] Branch protection prevents direct pushes to main
+- [x] Push to a branch and open a PR triggers CI workflow
+- [x] CI runs all four checks and reports status on the PR
+- [d] Commenting `@claude review` on the PR triggers Claude Code Action (deferred — no API key)
+- [d] Claude posts a review comment on the PR (deferred — no API key)
+- [x] Issue template is available when creating new issues
+- [x] Branch protection prevents direct pushes to main
 
 #### Constraints
 - Use `claude-code-action@v1`
